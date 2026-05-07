@@ -1,0 +1,72 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "stage"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "exp"
+
+variables:
+  PROJECT_NAME: kronverk-lab
+  NGINX_VERSION: 1.29.0
+  POSTGRES_VERSION: 17.4-bookworm
+  POSTGRES_TSDB_PKG: timescaledb-2-postgresql-17
+  VALKEY_VERSION: 8.0.2
+  UI_VERSION: 3.11
+
+default:
+  tags:
+    - ubuntu-docker
+
+build_nginx:
+  rules:
+    - changes:
+        - src/nginx/*
+  stage: build
+  before_script:
+    - echo "${HARBOR_TOKEN}" | docker login --username "robot\$alldeploy" --password-stdin ${HARBOR_ADDRESS}
+  script:
+    - >
+      IMAGE_NAME=${HARBOR_ADDRESS}/${PROJECT_NAME}/nginx
+      IMAGE_VERSION=${NGINX_VERSION}
+      NGINX_FROM_IMAGE=nginx:${NGINX_VERSION}
+      
+      if [[ $CI_COMMIT_BRANCH == "master" ]];
+        then
+          IMAGE_NAME_TAGGED=${IMAGE_NAME}:${IMAGE_VERSION}
+          IMAGE_NAME_TAGGED_SHA=${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
+        else
+          IMAGE_NAME_TAGGED=${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}-${IMAGE_VERSION}
+          IMAGE_NAME_TAGGED_SHA=${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}
+      fi
+    - cd src/nginx
+    - DOCKER_BUILDKIT=1 docker build --build-arg NGINX_FROM_IMAGE=${NGINX_FROM_IMAGE} -t ${IMAGE_NAME_TAGGED} -t ${IMAGE_NAME_TAGGED_SHA} -f Dockerfile .
+    - docker inspect ${IMAGE_NAME_TAGGED}
+    - docker push ${IMAGE_NAME_TAGGED}
+    - docker push ${IMAGE_NAME_TAGGED_SHA}
+
+build_postgres:
+  rules:
+    - changes:
+        - src/postgres/*
+  stage: build
+  before_script:
+    - echo "${HARBOR_TOKEN}" | docker login --username "robot\$alldeploy" --password-stdin ${HARBOR_ADDRESS}
+  script:
+    - >
+      IMAGE_NAME=${HARBOR_ADDRESS}/${PROJECT_NAME}/postgres
+      IMAGE_VERSION=${POSTGRES_VERSION}
+      POSTGRES_FROM_IMAGE=postgres:${POSTGRES_VERSION}
+
+      if [[ $CI_COMMIT_BRANCH == "master" ]];
+        then
+          IMAGE_NAME_TAGGED=${IMAGE_NAME}:${IMAGE_VERSION}
+          IMAGE_NAME_TAGGED_SHA=${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
+        else
+          IMAGE_NAME_TAGGED=${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}-${IMAGE_VERSION}
+          IMAGE_NAME_TAGGED_SHA=${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}
+      fi
+    - cd src/postgres
+    - docker build --build-arg POSTGRES_FROM_IMAGE=${POSTGRES_FROM_IMAGE} --build-arg POSTGRES_TSDB_PKG=${POSTGRES_TSDB_PKG} -t ${IMAGE_NAME_TAGGED} -t ${IMAGE_NAME_TAGGED_SHA} -f Dockerfile .
+    - docker inspect ${IMAGE_NAME_TAGGED}
+    - docker push ${IMAGE_NAME_TAGGED}
+    - docker push ${IMAGE_NAME_TAGGED_SHA}
